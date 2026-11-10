@@ -16,6 +16,11 @@ export class GeminiProvider implements LlmProvider {
   generateJson<T>(request: GenerateJsonRequest<T>): Promise<T> {
     const model = this.model.replace(/^models\//, "");
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const generationConfig = {
+      maxOutputTokens: request.maxOutputTokens ?? 2_048,
+      responseMimeType: "application/json",
+      responseJsonSchema: request.jsonSchema,
+    };
 
     return requestJson(
       this.name,
@@ -28,12 +33,7 @@ export class GeminiProvider implements LlmProvider {
         },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: request.prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: request.maxOutputTokens ?? 2_048,
-            responseMimeType: "application/json",
-            responseJsonSchema: request.jsonSchema,
-          },
+          generationConfig,
         }),
       }),
       (payload) => {
@@ -44,6 +44,12 @@ export class GeminiProvider implements LlmProvider {
         return parseJsonContent(content);
       },
       request.schema,
+      {
+        model,
+        schemaName: request.schemaName,
+        promptCharacters: request.prompt.length,
+        generationConfig,
+      },
     );
   }
 }

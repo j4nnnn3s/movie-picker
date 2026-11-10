@@ -54,6 +54,12 @@ export type CandidatePoolOptions = {
   maxCandidates?: number;
 };
 
+function devLog(message: string, details: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "development") {
+    console.info(`[recommendations] ${message}`, details);
+  }
+}
+
 export function deriveCandidateFilters(
   questions: readonly Question[],
   answers: Answers,
@@ -116,8 +122,16 @@ async function referenceMovies(references: readonly ReferenceMovie[], pages: num
         response.results.map((movie) => ({ movie, source: "similar" }))));
     }
   }
-  return (await Promise.allSettled(requests)).flatMap((result) =>
+  const settled = await Promise.allSettled(requests);
+  const movies = settled.flatMap((result) =>
     result.status === "fulfilled" ? result.value : []);
+  devLog("reference lookup", {
+    references: references.length,
+    requests: requests.length,
+    failedRequests: settled.filter((result) => result.status === "rejected").length,
+    results: movies.length,
+  });
+  return movies;
 }
 
 export async function buildCandidatePool(
@@ -141,11 +155,20 @@ export async function buildCandidatePool(
     Promise.allSettled(discoverRequests),
     referenceMovies(options.references ?? [], pages),
   ]);
+  const fromDiscover = discoverSettled.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : []);
   const raw = [
     ...fromReferences,
-    ...discoverSettled.flatMap((result) =>
-      result.status === "fulfilled" ? result.value : []),
+    ...fromDiscover,
   ];
+  devLog("source results", {
+    services: options.services.length,
+    discoverRequests: discoverRequests.length,
+    failedDiscoverRequests: discoverSettled.filter((result) => result.status === "rejected").length,
+    discoverResults: fromDiscover.length,
+    referenceResults: fromReferences.length,
+    filters,
+  });
 
   const unique = new Map<number, { movie: TmdbMovieSummary; source: CandidateMovie["source"] }>();
   for (const item of raw) {
@@ -154,8 +177,28 @@ export async function buildCandidatePool(
     }
   }
 
-  // Bound detail/provider fan-out while keeping reference-derived items first.
-  const shortlist = [...unique.values()].slice(0, Math.max(maxCandidates * 3, 60));
+  // Keep reference relevance without allowing unavailable reference results to
+  // crowd service-compatible discovery results out of the detail shortlist.
+  const shortlistLimit = Math.max(maxCandidates * 3, 60);
+  const uniqueCandidates = [...unique.values()];
+  const referenceCandidates = uniqueCandidates.filter((item) => item.source !== "discover");
+  const discoverCandidates = uniqueCandidates.filter((item) => item.source === "discover");
+  const discoverTarget = discoverCandidates.length ? Math.floor(shortlistLimit / 3) : 0;
+  const shortlist = [
+    ...referenceCandidates.slice(0, shortlistLimit - discoverTarget),
+    ...discoverCandidates.slice(0, discoverTarget),
+  ];
+  if (shortlist.length < shortlistLimit) {
+    const selected = new Set(shortlist.map((item) => item.movie.id));
+    shortlist.push(...uniqueCandidates
+      .filter((item) => !selected.has(item.movie.id))
+      .slice(0, shortlistLimit - shortlist.length));
+  }
+  const rejected = {
+    unavailableDetails: 0,
+    noSelectedProvider: 0,
+    filterMismatch: 0,
+  };
   const enriched = await Promise.all(shortlist.map(
     async ({ movie, source }): Promise<CandidateMovie | null> => {
     try {
@@ -164,7 +207,14 @@ export async function buildCandidatePool(
         getMovieWatchProviders(movie.id),
       ]);
       const providers = matchSelectedProviders(options.services, mapping, availability);
-      if (!providers.length || !matchesFilters(details, filters)) return null;
+      if (!providers.length) {
+        rejected.noSelectedProvider += 1;
+        return null;
+      }
+      if (!matchesFilters(details, filters)) {
+        rejected.filterMismatch += 1;
+        return null;
+      }
       const candidate: CandidateMovie = {
         tmdbId: details.id,
         title: details.title,
@@ -184,10 +234,28 @@ export async function buildCandidatePool(
       if (details.original_title) candidate.originalTitle = details.original_title;
       return candidate;
     } catch {
+      rejected.unavailableDetails += 1;
       return null;
     }
   }));
 
-  return enriched.filter((candidate): candidate is CandidateMovie => candidate !== null)
+  const candidates = enriched.filter((candidate): candidate is CandidateMovie => candidate !== null)
     .slice(0, maxCandidates);
+  devLog("candidate pool", {
+    raw: raw.length,
+    unique: unique.size,
+    shortlist: shortlist.length,
+    shortlistBySource: {
+      reference: shortlist.filter((item) => item.source !== "discover").length,
+      discover: shortlist.filter((item) => item.source === "discover").length,
+    },
+    rejected,
+    accepted: candidates.length,
+    acceptedBySource: {
+      recommendation: candidates.filter((candidate) => candidate.source === "recommendation").length,
+      similar: candidates.filter((candidate) => candidate.source === "similar").length,
+      discover: candidates.filter((candidate) => candidate.source === "discover").length,
+    },
+  });
+  return candidates;
 }

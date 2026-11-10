@@ -2,7 +2,7 @@ import type { z } from "zod";
 
 import { LlmError, type LlmErrorKind } from "@/lib/llm/errors";
 
-const TIMEOUT_MS = 20_000;
+const TIMEOUT_MS = 60_000;
 const RETRY_DELAY_MS = 250;
 
 function dailyLimit(text: string) {
@@ -15,9 +15,44 @@ function kindFor(status: number | undefined, body = ""): LlmErrorKind {
   return "down";
 }
 
-function logFailure(provider: string, status?: number) {
-  // Never log response bodies, prompts, API keys, or user input.
-  console.error("LLM request failed", { provider, status: status ?? "network" });
+type UpstreamErrorDetails = {
+  upstreamCode?: number;
+  upstreamStatus?: string;
+  upstreamMessage?: string;
+  upstreamRequestId?: string;
+};
+
+function upstreamErrorDetails(text: string): UpstreamErrorDetails | undefined {
+  try {
+    const payload = JSON.parse(text) as Record<string, unknown>;
+    const error = payload.error;
+    if (!error || typeof error !== "object") return undefined;
+    const details = error as Record<string, unknown>;
+    return {
+      ...(typeof details.code === "number" ? { upstreamCode: details.code } : {}),
+      ...(typeof details.status === "string" ? { upstreamStatus: details.status } : {}),
+      ...(typeof details.message === "string"
+        ? { upstreamMessage: details.message.replace(/\s+/g, " ").slice(0, 500) }
+        : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function logFailure(
+  provider: string,
+  status?: number,
+  details?: UpstreamErrorDetails,
+  diagnostics?: Record<string, unknown>,
+) {
+  // Never log raw response bodies, prompts, API keys, or user input.
+  console.error("LLM request failed", {
+    provider,
+    status: status ?? "network",
+    ...details,
+    ...diagnostics,
+  });
 }
 
 function shouldRetry(error: LlmError) {
@@ -34,6 +69,7 @@ export async function requestJson<T>(
   makeRequest: (signal: AbortSignal) => Promise<Response>,
   extractJson: (payload: unknown) => unknown,
   schema: z.ZodType<T>,
+  diagnostics?: Record<string, unknown>,
 ): Promise<T> {
   const deadline = Date.now() + TIMEOUT_MS;
   let lastError: LlmError | undefined;
@@ -44,12 +80,20 @@ export async function requestJson<T>(
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), remaining);
+    let failureDetails: UpstreamErrorDetails | undefined;
 
     try {
       const response = await makeRequest(controller.signal);
       const text = await response.text();
 
       if (!response.ok) {
+        const requestId = response.headers.get("x-request-id")
+          ?? response.headers.get("x-goog-request-id")
+          ?? response.headers.get("x-guploader-uploadid");
+        failureDetails = {
+          ...upstreamErrorDetails(text),
+          ...(requestId ? { upstreamRequestId: requestId } : {}),
+        };
         throw new LlmError(kindFor(response.status, text), provider, response.status);
       }
 
@@ -75,7 +119,7 @@ export async function requestJson<T>(
         ? error
         : new LlmError("down", provider);
       lastError = llmError;
-      logFailure(provider, llmError.status);
+      logFailure(provider, llmError.status, failureDetails, diagnostics);
 
       if (attempt === 1 || !shouldRetry(llmError)) throw llmError;
     } finally {

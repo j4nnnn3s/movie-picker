@@ -92,6 +92,13 @@ export function MoviePicker() {
       if (!data.suggestions.length) throw { error: "no_matches" };
       dispatch({ type: "suggestions", suggestions: data.suggestions, append });
     } catch (cause) {
+      if (
+        append
+        && cause
+        && typeof cause === "object"
+        && "error" in cause
+        && cause.error === "no_matches"
+      ) return;
       fail(cause);
     } finally {
       fetching.current = false;
@@ -281,6 +288,7 @@ function Questions({ questions, index, answers, busy, onAnswer, onBack }: {
 }) {
   const question = questions[index];
   const [selected, setSelected] = useState<string[]>(answers[question?.id] ?? []);
+  if (busy) return <Loading label="Looking through the shelves…" />;
   if (!question) return <Loading label="Preparing your questions…" />;
   const choose = (id: string) => {
     if (!question.multi) return onAnswer(question, [id]);

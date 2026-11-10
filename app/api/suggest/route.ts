@@ -67,11 +67,26 @@ export async function POST(request: NextRequest) {
       maxCandidates: 30,
     });
     candidates = pool.filter(hasPoster);
-  } catch {
+    if (process.env.NODE_ENV === "development") {
+      console.info("[recommendations] poster filter", {
+        pool: pool.length,
+        missingPoster: pool.length - candidates.length,
+        candidates: candidates.length,
+      });
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[recommendations] candidate pool failed", error instanceof Error
+        ? { name: error.name, message: error.message }
+        : { error: "unknown" });
+    }
     return NextResponse.json({ error: "tmdb_unavailable" }, { status: 503 });
   }
 
   if (!candidates.length) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[recommendations] no matches remain before LLM ranking");
+    }
     return NextResponse.json({ error: "no_matches" }, { status: 404 });
   }
 
