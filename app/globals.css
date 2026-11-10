@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #15110f;
+  --foreground: #faf7f2;
 }
 
 @theme inline {
@@ -12,15 +12,138 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+  background-image:
+    radial-gradient(circle at 50% -10%, rgb(217 119 6 / 0.13), transparent 35rem),
+    linear-gradient(180deg, #1b1512 0%, #100d0c 100%);
+  background-attachment: fixed;
+}
+
+button, input, textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.cinema-panel {
+  border: 1px solid rgb(255 255 255 / .1);
+  border-radius: 1.5rem;
+  background: rgb(28 23 20 / .92);
+  box-shadow: 0 30px 80px rgb(0 0 0 / .35);
+}
+
+.eyebrow, .step-label {
+  color: #fcd34d;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.screen-title {
+  margin-top: .4rem;
+  font-size: clamp(1.8rem, 8vw, 2.4rem);
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -.025em;
+}
+
+.screen-copy {
+  margin-top: .65rem;
+  color: #a8a29e;
+}
+
+.field {
+  min-height: 3.25rem;
+  width: 100%;
+  border: 1px solid rgb(255 255 255 / .12);
+  border-radius: .85rem;
+  background: rgb(255 255 255 / .06);
+  padding: .85rem 1rem;
+  color: #fafaf9;
+  outline: none;
+}
+
+.field:focus {
+  border-color: #fcd34d;
+  box-shadow: 0 0 0 3px rgb(252 211 77 / .12);
+}
+
+.primary-button, .secondary-button {
+  min-height: 3.25rem;
+  border-radius: .85rem;
+  padding: .75rem 1.1rem;
+  font-weight: 700;
+  transition: transform .15s ease, background .15s ease;
+}
+
+.primary-button {
+  background: #fcd34d;
+  color: #1c1917;
+}
+
+.secondary-button {
+  border: 1px solid rgb(255 255 255 / .12);
+  background: rgb(255 255 255 / .05);
+  color: #e7e5e4;
+}
+
+.primary-button:active, .secondary-button:active {
+  transform: scale(.98);
+}
+
+.choice-card {
+  display: flex;
+  min-height: 4.25rem;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid rgb(255 255 255 / .1);
+  border-radius: 1rem;
+  background: rgb(255 255 255 / .045);
+  padding: .85rem 1rem;
+  color: #f5f5f4;
+  text-align: left;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+
+.choice-card-active {
+  border-color: #fcd34d;
+  background: rgb(252 211 77 / .08);
+}
+
+.check {
+  display: grid;
+  height: 1.5rem;
+  width: 1.5rem;
+  flex: none;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / .18);
+  border-radius: 999px;
+  font-size: .75rem;
+}
+
+.check-active {
+  border-color: #fcd34d;
+  background: #fcd34d;
+  color: #1c1917;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
 }
